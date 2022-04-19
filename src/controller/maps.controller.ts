@@ -1,8 +1,8 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { MapsService } from '../service/maps.service';
 import { JwtAuthGuard } from '../security/jwt.guard';
-import { DecodeInput } from '../dto/input/map-dto.input';
-import { DecodeOutput } from '../dto/output/map-dto.output';
+import { DecodeInput, DirectionsInput, PlacesInput } from '../dto/input/map-dto.input';
+import { DecodeOutput, DirectionsOutput, PlacesOutput } from '../dto/output/map-dto.output';
 
 @Controller('/api/v1/maps')
 export class MapsController {
@@ -16,7 +16,13 @@ export class MapsController {
 
 	@Post('/direction')
 	@UseGuards(JwtAuthGuard)
-	async direction(@Body() data) {
-		return 'direction';
+	async direction(@Body() data: DirectionsInput): Promise<DirectionsOutput> {
+		return this.mapsService.getDirection(data.from, data.to);
+	}
+
+	@Post('/places')
+	@UseGuards(JwtAuthGuard)
+	async places(@Body() data: PlacesInput): Promise<PlacesOutput> {
+		return this.mapsService.searchPlaces(data.toSearch);
 	}
 }

@@ -4,9 +4,11 @@ import { RTCService } from '../service/rtc.service';
 import { TokenModule } from './token.module';
 import { UserModule } from './user.module';
 import { GeoUtils } from '../utils/geo-utils.utils';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { RideRepository } from '../repository/ride.repository';
 
 @Module({
-	imports: [TokenModule, UserModule],
+	imports: [TokenModule, UserModule, TypeOrmModule.forFeature([RideRepository])],
 	providers: [RTCController, RTCService, GeoUtils],
 	exports: [RTCController],
 })

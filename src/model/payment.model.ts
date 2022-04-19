@@ -18,7 +18,4 @@ export class Payment {
 
 	@Column({ type: 'bigint' })
 	timestamp: number;
-
-	@Column({ nullable: true })
-	stripePaymentId?: string;
 }

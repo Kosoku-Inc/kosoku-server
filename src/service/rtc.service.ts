@@ -4,25 +4,33 @@ import { Socket } from 'socket.io';
 import { GenerateTokenInput } from '../dto/input/auth-dto.input';
 import { UserService } from './user.service';
 import { User } from '../model/user.model';
-import { ExtendedLocation, Location } from '../utils/types/location.types';
-import { SocketUserInfo, WithUserRole, WSMessageType } from '../utils/types/rtc-events.types';
+import { Location } from '../utils/types/location.types';
+import { DriverSocketUserInfo, SocketUserInfo, WithUserRole, WSMessageType } from '../utils/types/rtc-events.types';
 import { RideStatus } from '../utils/types/ride-status.types';
 import { GeoUtils } from '../utils/geo-utils.utils';
 import { waitForSocketResponse } from '../utils/awaitable-socket.utils';
 import { logger } from '../utils/logger.utils';
+import { ExtendedRideRequest } from '../utils/types/ride-request.types';
+import { RideRepository } from '../repository/ride.repository';
+import { Ride } from '../model/ride.model';
 
 @Injectable()
 export class RTCService {
 	private readonly idBasedSocketHolder: Map<number, Socket>;
-	private readonly socketBasedSocketHolder: WeakMap<Socket, number>;
-	private readonly clientConnectionHolder: Map<number, SocketUserInfo>;
-	private readonly driverConnectionHolder: Map<number, SocketUserInfo>;
+	private readonly socketBasedIdHolder: WeakMap<Socket, number>;
+	private readonly clientDataHolder: Map<number, SocketUserInfo>;
+	private readonly driverDataHolder: Map<number, DriverSocketUserInfo>;
 
-	constructor(private tokenProvider: TokenProvider, private userService: UserService, private geoUtils: GeoUtils) {
-		this.clientConnectionHolder = new Map<number, SocketUserInfo>();
-		this.driverConnectionHolder = new Map<number, SocketUserInfo>();
+	constructor(
+		private tokenProvider: TokenProvider,
+		private userService: UserService,
+		private geoUtils: GeoUtils,
+		private rideRepository: RideRepository
+	) {
+		this.clientDataHolder = new Map<number, SocketUserInfo>();
+		this.driverDataHolder = new Map<number, DriverSocketUserInfo>();
 		this.idBasedSocketHolder = new Map<number, Socket>();
-		this.socketBasedSocketHolder = new WeakMap<Socket, number>();
+		this.socketBasedIdHolder = new WeakMap<Socket, number>();
 	}
 
 	private async getUserFromSocket(socket: Socket): Promise<User> {
@@ -47,31 +55,31 @@ export class RTCService {
 		const user = await this.getUserFromSocket(socket);
 
 		if (user.driver) {
-			this.driverConnectionHolder.set(user.id, {});
+			this.driverDataHolder.set(user.id, { carClass: user.driver.carClass });
 		} else {
-			this.clientConnectionHolder.set(user.id, {});
+			this.clientDataHolder.set(user.id, {});
 		}
 
 		this.idBasedSocketHolder.set(user.id, socket);
-		this.socketBasedSocketHolder.set(socket, user.id);
+		this.socketBasedIdHolder.set(socket, user.id);
 	}
 
 	async removeUser(socket: Socket) {
 		const user = await this.getUserFromSocket(socket);
 
 		if (user.driver) {
-			this.driverConnectionHolder.delete(user.id);
+			this.driverDataHolder.delete(user.id);
 		} else {
-			this.clientConnectionHolder.delete(user.id);
+			this.clientDataHolder.delete(user.id);
 		}
 
 		this.idBasedSocketHolder.delete(user.id);
-		this.socketBasedSocketHolder.delete(socket);
+		this.socketBasedIdHolder.delete(socket);
 	}
 
 	async handleLocationUpdate(location: WithUserRole<Location>, socket: Socket) {
-		const toSearchIn = location.isClient ? this.clientConnectionHolder : this.driverConnectionHolder;
-		const userId = this.socketBasedSocketHolder.get(socket);
+		const toSearchIn = location.isClient ? this.clientDataHolder : this.driverDataHolder;
+		const userId = this.socketBasedIdHolder.get(socket);
 		// We setting this data on init, so it cant be undefined
 		const info = toSearchIn.get(userId) as SocketUserInfo;
 		info.location = location.data;
@@ -88,24 +96,33 @@ export class RTCService {
 		}
 	}
 
-	async handleRideRequest(location: WithUserRole<ExtendedLocation>, socket: Socket) {
-		const userId = this.socketBasedSocketHolder.get(socket);
-		const user = this.clientConnectionHolder.get(userId);
+	async handleRideRequest(request: WithUserRole<ExtendedRideRequest>, socket: Socket) {
+		const userId = this.socketBasedIdHolder.get(socket);
+		const user = this.clientDataHolder.get(userId);
 		let driver: [number, SocketUserInfo] | null = null;
+		let wasStopped = false;
+
+		await this.handleStopSearch(socket);
 
 		return new Promise(async (resolve, reject) => {
-			user.stopSearch = () => reject('Поиск остановлен');
+			user.stopSearch = () => {
+				reject('Поиск остановлен');
+				wasStopped = true;
+			};
 
-			const sortedList = this.geoUtils.toSortedList(location.data, this.driverConnectionHolder); //LUL
+			const sortedList = this.geoUtils
+				.toSortedList(user.location, this.driverDataHolder)
+				.filter((value) => (value[1] as DriverSocketUserInfo).carClass === request.data.carClass); //LUL
 
 			for await (const entry of sortedList) {
 				const socket = this.idBasedSocketHolder.get(entry[0]);
-				socket.emit(WSMessageType.RideRequest, location);
+				socket.emit(WSMessageType.RideRequest, request);
 
 				try {
 					const result = await waitForSocketResponse(
 						socket,
-						10000,
+						20000,
+						WSMessageType.RideTimeout,
 						WSMessageType.RideAccept,
 						WSMessageType.RideDecline
 					);
@@ -122,25 +139,66 @@ export class RTCService {
 			user.stopSearch = null;
 
 			if (!driver) {
-				socket.send(WSMessageType.RideDecline);
+				socket.emit(WSMessageType.RideDecline);
 				return;
 			}
 
-			user.companionId = driver[0];
-			this.driverConnectionHolder.get(driver[0]).companionId = userId;
+			if (wasStopped) {
+				this.idBasedSocketHolder.get(driver[0]).emit(WSMessageType.RideDecline);
+				return;
+			}
 
-			socket.send(WSMessageType.RideStatusChange, { status: RideStatus.Starting });
+			// Cant stop ride starting after this
+			user.stopSearch = null;
+
+			user.companionId = driver[0];
+			this.driverDataHolder.get(driver[0]).companionId = userId;
+
+			const dbDriver = await this.userService.getUser(driver[0]);
+			const dbClient = await this.userService.getUser(userId);
+
+			const ride = new Ride();
+
+			ride.client = dbClient;
+			ride.driver = dbDriver;
+			ride.cost = request.data.cost;
+			ride.to = request.data.to.readableLocation;
+			ride.from = request.data.from.readableLocation;
+			ride.status = RideStatus.Starting;
+			ride.startTime = Date.now();
+
+			await this.rideRepository.save(ride);
+
+			this.driverDataHolder.get(driver[0]).rideId = ride.id;
+
+			socket.emit(WSMessageType.RideAccept, ride);
+			this.idBasedSocketHolder.get(driver[0]).emit(WSMessageType.RideAccept, ride);
 		});
 	}
 
 	async handleStopSearch(socket: Socket) {
-		const clientId = this.socketBasedSocketHolder.get(socket);
-		const client = this.clientConnectionHolder.get(clientId);
+		const clientId = this.socketBasedIdHolder.get(socket);
+		const client = this.clientDataHolder.get(clientId);
 
 		client.stopSearch && client.stopSearch();
 	}
 
 	async handleRideStatusChange(status: WithUserRole<RideStatus>, socket: Socket) {
-		console.log(status);
+		const driverId = this.socketBasedIdHolder.get(socket);
+		const driverData = this.driverDataHolder.get(driverId);
+
+		const ride = await this.rideRepository.findOneOrFail(driverData.rideId);
+
+		ride.status = status.data;
+
+		if (status.data === RideStatus.Completed) {
+			ride.endTime = Date.now();
+		}
+
+		this.idBasedSocketHolder
+			.get(driverData.companionId)
+			?.emit(WSMessageType.RideStatusChange, { status: status.data });
+
+		await this.rideRepository.save(ride);
 	}
 }

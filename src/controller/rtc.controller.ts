@@ -9,9 +9,10 @@ import {
 import { RTCService } from '../service/rtc.service';
 import { Socket } from 'socket.io';
 import { WithUserRole, WSMessageType } from '../utils/types/rtc-events.types';
-import {ExtendedLocation, Location} from '../utils/types/location.types';
+import { Location } from '../utils/types/location.types';
 import { logger } from '../utils/logger.utils';
 import { RideStatus } from '../utils/types/ride-status.types';
+import { ExtendedRideRequest } from '../utils/types/ride-request.types';
 
 @WebSocketGateway(81, { transports: ['websocket'] })
 export class RTCController implements OnGatewayConnection, OnGatewayDisconnect {
@@ -33,7 +34,7 @@ export class RTCController implements OnGatewayConnection, OnGatewayDisconnect {
 
 	// Client-only
 	@SubscribeMessage(WSMessageType.RideRequest)
-	handleRideRequest(@MessageBody() data: WithUserRole<ExtendedLocation>, @ConnectedSocket() client: Socket) {
+	handleRideRequest(@MessageBody() data: WithUserRole<ExtendedRideRequest>, @ConnectedSocket() client: Socket) {
 		this.rtcService.handleRideRequest(data, client).catch(logger.error);
 	}
 

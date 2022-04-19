@@ -104,7 +104,6 @@ export class PaymentService {
 		payment.amount = paymentData.amount;
 		payment.timestamp = Date.now();
 		payment.user = user;
-		payment.stripePaymentId = paymentData.paymentId;
 
 		await this.paymentRepository.save(payment);
 
