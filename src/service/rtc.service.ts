@@ -13,6 +13,7 @@ import { logger } from '../utils/logger.utils';
 import { ExtendedRideRequest } from '../utils/types/ride-request.types';
 import { RideRepository } from '../repository/ride.repository';
 import { Ride } from '../model/ride.model';
+import { Directions } from '../integration/directions/directions.integration';
 
 @Injectable()
 export class RTCService {
@@ -25,7 +26,8 @@ export class RTCService {
 		private tokenProvider: TokenProvider,
 		private userService: UserService,
 		private geoUtils: GeoUtils,
-		private rideRepository: RideRepository
+		private rideRepository: RideRepository,
+		private directions: Directions
 	) {
 		this.clientDataHolder = new Map<number, SocketUserInfo>();
 		this.driverDataHolder = new Map<number, DriverSocketUserInfo>();
@@ -116,7 +118,15 @@ export class RTCService {
 
 			for await (const entry of sortedList) {
 				const socket = this.idBasedSocketHolder.get(entry[0]);
-				socket.emit(WSMessageType.RideRequest, request);
+				const toPickUp = await this.directions.getDirection(entry[1].location, request.data.from);
+
+				socket.emit(WSMessageType.RideRequest, {
+					...request,
+					data: {
+						...request.data,
+						toPickUp: toPickUp.route,
+					},
+				});
 
 				try {
 					const result = await waitForSocketResponse(
@@ -192,6 +202,10 @@ export class RTCService {
 		ride.status = status.data;
 
 		if (status.data === RideStatus.Completed) {
+			const driver = await this.userService.getUser(driverId);
+			driver.driver.balance = driver.driver.balance + ride.cost;
+			await this.userService.saveUser(driver);
+
 			ride.endTime = Date.now();
 		}
 

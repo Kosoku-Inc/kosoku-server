@@ -9,7 +9,13 @@ export class Directions {
 
 	constructor(private maps: GoogleMaps) {}
 
-	async getDirection(from: Location, to: Location) {
+	async getDirection(
+		from: Location,
+		to: Location
+	): Promise<{
+		minutes: number;
+		route: Array<Location>;
+	}> {
 		if (this.mockDirections) {
 		} else {
 			const result = await this.maps.client.directions({
@@ -21,7 +27,13 @@ export class Directions {
 				},
 			});
 
-			//result.data.routes[0].overview_polyline
+			return {
+				minutes: result.data.routes[0].legs[0].duration.value / 60,
+				route: result.data.routes[0].overview_path.map((path) => ({
+					latitude: path.lat,
+					longitude: path.lng,
+				})),
+			};
 		}
 	}
 }

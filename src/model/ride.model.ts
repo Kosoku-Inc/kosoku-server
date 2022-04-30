@@ -18,7 +18,7 @@ export class Ride {
 	@JoinColumn()
 	payment?: Payment;
 
-	@Column()
+	@Column({ type: 'float', default: 0.0 })
 	cost: number;
 
 	@Column({ nullable: true, type: 'bigint' })

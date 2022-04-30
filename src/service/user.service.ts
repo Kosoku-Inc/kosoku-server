@@ -22,6 +22,11 @@ export class UserService {
 		return this.userRepository.findOneOrFail({ id }, { relations: ['driver'] });
 	}
 
+	async saveUser(user: User) {
+		await this.userRepository.save(user);
+		await this.driverRepository.save(user.driver);
+	}
+
 	async createUser(data: RegisterInput): Promise<User> {
 		const user = new User();
 

@@ -20,15 +20,16 @@ export class MapsService {
 	}
 
 	async getDirection(from: Location, to: Location): Promise<DirectionsOutput> {
-		const direction = this.directions.getDirection(from, to);
+		const direction = await this.directions.getDirection(from, to);
+		const time = Math.ceil(direction.minutes);
 
 		return {
-			calculatedTime: 12,
-			route: direction,
+			calculatedTime: time,
+			route: direction.route,
 			classes: {
-				[CarClass.Economy]: 8,
-				[CarClass.Comfort]: 10,
-				[CarClass.Business]: 12,
+				[CarClass.Economy]: 3 + 0.3 * time,
+				[CarClass.Comfort]: 4 + 0.4 * time,
+				[CarClass.Business]: 5 + 0.5 * time,
 			},
 		};
 	}

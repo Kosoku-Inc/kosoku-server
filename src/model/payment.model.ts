@@ -13,7 +13,7 @@ export class Payment {
 	@ManyToOne(() => PaymentMethod)
 	method: PaymentMethod;
 
-	@Column()
+	@Column({ type: 'float', default: 0.0 })
 	amount: number;
 
 	@Column({ type: 'bigint' })

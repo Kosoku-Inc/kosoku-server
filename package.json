@@ -33,6 +33,7 @@
     "axios": "^0.26.1",
     "bcrypt": "^5.0.1",
     "dotenv": "^16.0.0",
+    "graphhopper-js-api-client": "^0.13.0",
     "passport": "^0.5.2",
     "passport-jwt": "^4.0.0",
     "passport-local": "^1.0.0",

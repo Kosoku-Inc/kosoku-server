@@ -12,6 +12,6 @@ export class Driver {
 	@Column()
 	carClass: CarClass;
 
-	@Column()
+	@Column({ type: 'float', default: 0.0 })
 	balance: number;
 }

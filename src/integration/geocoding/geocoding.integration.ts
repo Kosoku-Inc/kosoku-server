@@ -42,8 +42,6 @@ export class Geocoding {
 				},
 			});
 
-			console.log(JSON.stringify(decoded.data));
-
 			return {
 				latitude: location.latitude,
 				longitude: location.longitude,

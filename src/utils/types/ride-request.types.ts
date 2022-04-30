@@ -1,9 +1,9 @@
 import { CarClass } from './car-class.types';
-import { ExtendedLocation } from './location.types';
+import { ExtendedLocation, Location } from './location.types';
 
 export type RideRequest = {
 	calculatedTime: number;
-	route: unknown; // TO-DO
+	route: Array<Location>; // TO-DO
 	classes: Record<CarClass, number>; // Class - amount
 };
 
@@ -12,4 +12,8 @@ export type ExtendedRideRequest = Omit<RideRequest, 'classes'> & {
 	from: ExtendedLocation;
 	cost: number;
 	carClass: CarClass;
+};
+
+export type ExtendedDriverRideRequest = ExtendedRideRequest & {
+	toPickUp: Array<Location>;
 };

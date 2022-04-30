@@ -24,7 +24,7 @@ export class Stripe {
 		const customer = customerId ? { id: customerId } : await this.stripe.customers.create({ email });
 
 		const params: StripeSDK.PaymentIntentCreateParams = {
-			amount: bynAmount / this.usdRate,
+			amount: Math.ceil((bynAmount * 100) / this.usdRate),
 			currency: 'usd',
 			customer: customer.id,
 			payment_method_options: {
