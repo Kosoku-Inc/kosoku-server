@@ -57,23 +57,48 @@ export class RTCService {
 		const user = await this.getUserFromSocket(socket);
 
 		if (user.driver) {
-			this.driverDataHolder.set(user.id, { carClass: user.driver.carClass });
+			if (this.driverDataHolder.has(user.id)) {
+				await this.handleRestoreState(socket, user, this.driverDataHolder.get(user.id).rideId);
+			} else {
+				this.driverDataHolder.set(user.id, { carClass: user.driver.carClass });
+			}
 		} else {
-			this.clientDataHolder.set(user.id, {});
+			if (this.clientDataHolder.has(user.id)) {
+				await this.handleRestoreState(socket, user, this.clientDataHolder.get(user.id).rideId);
+			} else {
+				this.clientDataHolder.set(user.id, {});
+			}
 		}
 
 		this.idBasedSocketHolder.set(user.id, socket);
 		this.socketBasedIdHolder.set(socket, user.id);
 	}
 
-	async removeUser(socket: Socket) {
-		const user = await this.getUserFromSocket(socket);
+	async handleRestoreState(socket: Socket, user: User, rideId?: number) {
+		if (!rideId) return;
+
+		let request: ExtendedRideRequest;
+		let toPickUp: Array<Location> | null = null;
+		const ride = await this.rideRepository.findOneOrFail({ id: rideId }, { relations: ['client', 'driver', 'driver.driver'] });
 
 		if (user.driver) {
-			this.driverDataHolder.delete(user.id);
+			request = this.driverDataHolder.get(user.id).rideRequest;
+			toPickUp = this.driverDataHolder.get(user.id).toPickUp;
 		} else {
-			this.clientDataHolder.delete(user.id);
+			request = this.clientDataHolder.get(user.id).rideRequest;
 		}
+
+		setTimeout(() => {
+			socket.emit(WSMessageType.RestoreState, {
+				ride,
+				request,
+				toPickUp,
+			});
+		}, 400);
+	}
+
+	async removeUser(socket: Socket) {
+		const user = await this.getUserFromSocket(socket);
 
 		this.idBasedSocketHolder.delete(user.id);
 		this.socketBasedIdHolder.delete(socket);
@@ -102,6 +127,7 @@ export class RTCService {
 		const userId = this.socketBasedIdHolder.get(socket);
 		const user = this.clientDataHolder.get(userId);
 		let driver: [number, SocketUserInfo] | null = null;
+		let driverData: DriverSocketUserInfo | null = null;
 		let wasStopped = false;
 
 		await this.handleStopSearch(socket);
@@ -139,6 +165,11 @@ export class RTCService {
 
 					if (result.event === WSMessageType.RideAccept) {
 						driver = entry;
+						driverData = this.driverDataHolder.get(driver[0]);
+
+						driverData.toPickUp = toPickUp.route;
+						driverData.rideRequest = request.data;
+
 						break;
 					}
 				} catch (e) {
@@ -160,9 +191,10 @@ export class RTCService {
 
 			// Cant stop ride starting after this
 			user.stopSearch = null;
-
 			user.companionId = driver[0];
-			this.driverDataHolder.get(driver[0]).companionId = userId;
+			user.rideRequest = request.data;
+
+			driverData.companionId = userId;
 
 			const dbDriver = await this.userService.getUser(driver[0]);
 			const dbClient = await this.userService.getUser(userId);
@@ -179,7 +211,8 @@ export class RTCService {
 
 			await this.rideRepository.save(ride);
 
-			this.driverDataHolder.get(driver[0]).rideId = ride.id;
+			driverData.rideId = ride.id;
+			user.rideId = ride.id;
 
 			socket.emit(WSMessageType.RideAccept, ride);
 			this.idBasedSocketHolder.get(driver[0]).emit(WSMessageType.RideAccept, ride);
@@ -196,7 +229,9 @@ export class RTCService {
 	async handleRideStatusChange(status: WithUserRole<RideStatus>, socket: Socket) {
 		const driverId = this.socketBasedIdHolder.get(socket);
 		const driverData = this.driverDataHolder.get(driverId);
+		const clientData = this.clientDataHolder.get(driverData.companionId);
 
+		const companionId = driverData.companionId;
 		const ride = await this.rideRepository.findOneOrFail(driverData.rideId);
 
 		ride.status = status.data;
@@ -206,12 +241,19 @@ export class RTCService {
 			driver.driver.balance = driver.driver.balance + ride.cost;
 			await this.userService.saveUser(driver);
 
+			driverData.rideId = null;
+			driverData.companionId = null;
+			driverData.rideRequest = null;
+			driverData.toPickUp = null;
+
+			clientData.rideId = null;
+			clientData.companionId = null;
+			clientData.rideRequest = null;
+
 			ride.endTime = Date.now();
 		}
 
-		this.idBasedSocketHolder
-			.get(driverData.companionId)
-			?.emit(WSMessageType.RideStatusChange, { status: status.data });
+		this.idBasedSocketHolder.get(companionId)?.emit(WSMessageType.RideStatusChange, { status: status.data });
 
 		await this.rideRepository.save(ride);
 	}
