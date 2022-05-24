@@ -8,7 +8,7 @@ import { logger } from './utils/logger.utils';
 
 const bootstrap = async () => {
 	const app = await NestFactory.create(AppModule);
-	await app.listen(3000);
+	await app.listen(process.env.PORT || 3000);
 };
 
 bootstrap().catch(logger.error);
