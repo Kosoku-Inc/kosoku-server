@@ -14,7 +14,7 @@ import { logger } from '../utils/logger.utils';
 import { RideStatus } from '../utils/types/ride-status.types';
 import { ExtendedRideRequest } from '../utils/types/ride-request.types';
 
-@WebSocketGateway(Number.parseInt(process.env.PORT), { transports: ['websocket'] })
+@WebSocketGateway()
 export class RTCController implements OnGatewayConnection, OnGatewayDisconnect {
 	constructor(private rtcService: RTCService) {}
 
