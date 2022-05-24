@@ -31,7 +31,7 @@ export class Geocoding {
 			return {
 				latitude: location.latitude,
 				longitude: location.longitude,
-				readableLocation: `Заглушка #${(Math.random() * 100).toFixed()} для экономии ;p`,
+				readableLocation: `Заглушка #${(Math.random() * 100).toFixed()}`,
 			};
 		} else {
 			const decoded = await this.maps.client.reverseGeocode({

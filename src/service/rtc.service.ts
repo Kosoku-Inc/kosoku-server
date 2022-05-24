@@ -79,13 +79,18 @@ export class RTCService {
 
 		let request: ExtendedRideRequest;
 		let toPickUp: Array<Location> | null = null;
-		const ride = await this.rideRepository.findOneOrFail({ id: rideId }, { relations: ['client', 'driver', 'driver.driver'] });
+		let driverLocation: Location | null = null;
+		const ride = await this.rideRepository.findOneOrFail(
+			{ id: rideId },
+			{ relations: ['client', 'driver', 'driver.driver'] }
+		);
 
 		if (user.driver) {
 			request = this.driverDataHolder.get(user.id).rideRequest;
 			toPickUp = this.driverDataHolder.get(user.id).toPickUp;
 		} else {
 			request = this.clientDataHolder.get(user.id).rideRequest;
+			driverLocation = this.driverDataHolder.get(this.clientDataHolder.get(user.id).companionId)?.location;
 		}
 
 		setTimeout(() => {
@@ -93,6 +98,7 @@ export class RTCService {
 				ride,
 				request,
 				toPickUp,
+				driverLocation,
 			});
 		}, 400);
 	}
@@ -111,15 +117,15 @@ export class RTCService {
 		const info = toSearchIn.get(userId) as SocketUserInfo;
 		info.location = location.data;
 
-		// Call S2 here
 		toSearchIn.set(userId, info);
 
 		// If this user on ride - send update to companion
 		if (info.companionId) {
 			this.idBasedSocketHolder.get(info.companionId)?.emit(WSMessageType.LocationUpdate, {
 				from: userId,
-				location,
+				location: location.data,
 			});
+
 		}
 	}
 
@@ -140,7 +146,9 @@ export class RTCService {
 
 			const sortedList = this.geoUtils
 				.toSortedList(user.location, this.driverDataHolder)
-				.filter((value) => (value[1] as DriverSocketUserInfo).carClass === request.data.carClass); //LUL
+				.filter(
+					(value) => (value[1] as DriverSocketUserInfo).carClass === request.data.carClass && !value[1].rideId
+				);
 
 			for await (const entry of sortedList) {
 				const socket = this.idBasedSocketHolder.get(entry[0]);
@@ -214,8 +222,14 @@ export class RTCService {
 			driverData.rideId = ride.id;
 			user.rideId = ride.id;
 
-			socket.emit(WSMessageType.RideAccept, ride);
-			this.idBasedSocketHolder.get(driver[0]).emit(WSMessageType.RideAccept, ride);
+			socket.emit(WSMessageType.RideAccept, {
+				ride,
+				driverLocation: driver[1].location,
+			});
+
+			this.idBasedSocketHolder.get(driver[0])?.emit(WSMessageType.RideAccept, {
+				ride,
+			});
 		});
 	}
 

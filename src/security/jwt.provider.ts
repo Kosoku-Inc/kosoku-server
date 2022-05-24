@@ -13,8 +13,8 @@ export class TokenProvider {
 		return typeof data === 'string'
 			? data
 			: {
-					email: data.email,
-					id: data.id,
+				email: data.email,
+				id: data.id,
 			  };
 	}
 
