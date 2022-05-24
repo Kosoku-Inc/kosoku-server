@@ -18,9 +18,9 @@ import { UserModule } from './user.module';
 			name: 'default',
 			autoLoadEntities: true,
 			synchronize: true,
-			/*ssl: {
+			ssl: {
 				rejectUnauthorized: false,
-			},*/
+			},
 		}),
 		AuthModule,
 		MapsModule,
